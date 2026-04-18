@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from datetime import date, timedelta
-from flask import Flask, render_template, request, redirect, url_for, abort, session, send_file
+from flask import Flask, render_template, request, redirect, url_for, abort, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from auth import User, verify_password
 from pathlib import Path
@@ -473,23 +473,6 @@ def receipt_view(ledger_entry_id):
     )
 
     return redirect(signed)
-
-@app.route("/files/<bucket>/<path:object_path>")
-@login_required
-def file_view(bucket, object_path):
-    base_storage_dir = Path(os.getenv("STORAGE_DIR", "storage"))
-    file_path = base_storage_dir / bucket / object_path
-
-    if not file_path.exists() or not file_path.is_file():
-        abort(404)
-
-    guessed_type, _ = mimetypes.guess_type(str(file_path))
-
-    return send_file(
-        file_path,
-        mimetype=guessed_type or "application/octet-stream",
-        as_attachment=False
-    )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
