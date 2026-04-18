@@ -11,6 +11,7 @@ from receipts import ReceiptData, generate_payment_receipt_pdf_bytes
 from decimal import Decimal
 from storage import upload_bytes, create_signed_url
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix # SSL fix
 
 from db import (
     get_db_connection,
@@ -28,6 +29,16 @@ from db import (
 ALLOWED_EXPENSE_EXTENSIONS = {"jpg", "jpeg", "png", "pdf"}
 
 app = Flask(__name__)
+
+##### ----------------------< FORCE HTTPS >---------------------- #####
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+@app.before_request
+def force_https():
+    # If request is not HTTPS, force it
+    if not request.is_secure and not app.debug:
+        return redirect(request.url.replace("http://", "https://", 1), code=301)
 
 # config
 app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024  # 3 MB request limit
