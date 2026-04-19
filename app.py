@@ -12,6 +12,8 @@ from decimal import Decimal
 from storage import upload_bytes, create_signed_url
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix # SSL fix
+from PIL import Image
+from io import BytesIO
 
 from db import (
     get_db_connection,
@@ -40,12 +42,33 @@ def force_https():
     if not request.is_secure and not app.debug:
         return redirect(request.url.replace("http://", "https://", 1), code=301)
 
-# config
-app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024  # 3 MB request limit
+##### ------------------< IMG UPLOAD RESIZE >------------------ #####
+
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 3 MB request limit
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
 app.permanent_session_lifetime = timedelta(hours=8)
 
-# auth
+def process_image(file_bytes: bytes, max_size=1600, quality=80) -> tuple[bytes, str]:
+    """
+    Resize and compress image.
+    Returns (processed_bytes, content_type)
+    """
+    img = Image.open(BytesIO(file_bytes))
+
+    # Convert RGBA/PNG → RGB (JPEG doesn't support alpha)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+
+    # Resize while keeping aspect ratio
+    img.thumbnail((max_size, max_size))
+
+    output = BytesIO()
+    img.save(output, format="JPEG", quality=quality, optimize=True)
+
+    return output.getvalue(), "image/jpeg"
+
+##### ----------------------< AUTH >---------------------- #####
+
 login_manager = LoginManager()
 login_manager.login_view = "login"
 login_manager.init_app(app)
@@ -399,7 +422,24 @@ def expenses():
                     continue
 
                 ext = filename.rsplit(".", 1)[1].lower()
-                content_type = f.mimetype or ("application/pdf" if ext == "pdf" else "image/jpeg")
+
+                # 👉 PROCESS IMAGES ONLY
+                if ext in ("jpg", "jpeg", "png"):
+                    try:
+                        # Always resize (recommended)
+                        data, content_type = process_image(data)
+
+                        # force extension to jpg since we re-encode
+                        filename = filename.rsplit(".", 1)[0] + ".jpg"
+
+                    except Exception:
+                        raise RuntimeError(f"Failed to process image: {filename}")
+
+                elif ext == "pdf":
+                    content_type = "application/pdf"
+
+                else:
+                    raise RuntimeError(f"Unsupported file type: {filename}")
 
                 # Unique storage path
                 bucket = "expenses"
